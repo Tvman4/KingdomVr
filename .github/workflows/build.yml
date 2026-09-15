@@ -1,3 +1,4 @@
+# Build a signed RELEASE apk (not debug) and attach it to a GitHub Release.
 name: Build Kingdom Release APK
 
 on:
