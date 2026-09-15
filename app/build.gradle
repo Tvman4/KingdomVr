@@ -1,0 +1,27 @@
+plugins { id 'com.android.application' }
+android {
+    namespace 'com.Tvman.KingdomVr'
+    compileSdk 34
+    defaultConfig {
+        applicationId "com.Tvman.KingdomVr"
+        minSdk 29
+        targetSdk 34
+        versionCode 1
+        versionName "1.0.0"
+    }
+    signingConfigs {
+        release {
+            storeFile file("${System.getenv('KINGDOM_KEYSTORE') ?: rootProject.file('signing/kingdom.keystore')}")
+            storePassword System.getenv('KINGDOM_STORE_PASSWORD') ?: 'kingdom-store'
+            keyAlias System.getenv('KINGDOM_KEY_ALIAS') ?: 'kingdom'
+            keyPassword System.getenv('KINGDOM_KEY_PASSWORD') ?: 'kingdom-key'
+        }
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+            debuggable false
+            signingConfig signingConfigs.release
+        }
+    }
+}
