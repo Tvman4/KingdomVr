@@ -1,112 +1,90 @@
-# Build a signed RELEASE apk (not debug) and attach it to a GitHub Release.
-name: Build Kingdom Release APK
+# Signed RELEASE APK for com.Tvman.KingdomVr → GitHub Releases
+# Keystore is created inside this workflow. Not a debug build.
+# Does NOT use android-actions/setup-android (that action still runs `sdkmanager tools`, which no longer exists).
+name: Build Kingdom VR APK
 
 on:
   push:
-    branches: [ main, master ]
-    tags: [ "v*" ]
+    branches: [main, master]
   workflow_dispatch:
 
 permissions:
   contents: write
 
+env:
+  ANDROID_HOME: /usr/local/lib/android/sdk
+  ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+
 jobs:
-  build:
+  release:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Set up JDK 17
-        uses: actions/setup-java@v4
+      - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+      - name: Accept Android licenses and install platform
+        run: |
+          set -e
+          SDK="${ANDROID_HOME}"
+          SM=""
+          for c in \
+            "$SDK/cmdline-tools/latest/bin/sdkmanager" \
+            "$SDK/cmdline-tools/16.0/bin/sdkmanager" \
+            "$SDK/cmdline-tools/12.0/bin/sdkmanager"
+          do
+            if [ -x "$c" ]; then SM="$c"; break; fi
+          done
+          if [ -z "$SM" ]; then
+            echo "sdkmanager not found"; ls -la "$SDK/cmdline-tools" || true; exit 1
+          fi
+          echo "Using $SM"
+          yes | "$SM" --licenses >/tmp/licenses.log 2>&1 || true
+          tail -5 /tmp/licenses.log || true
+          "$SM" "platforms;android-34" "build-tools;34.0.0"
 
-      - name: Install NDK
-        run: sdkmanager "ndk;26.1.10909125" "cmake;3.22.1"
-
-      - name: Restore keystore
-        env:
-          KEYSTORE_B64: ${{ secrets.KINGDOM_KEYSTORE_B64 }}
+      - name: Create release keystore inside CI
         run: |
           mkdir -p signing
-          if [ -n "$KEYSTORE_B64" ]; then
-            echo "$KEYSTORE_B64" | base64 -d > signing/kingdom.keystore
-          elif [ -f signing/kingdom.keystore ]; then
-            echo "Using repo keystore (dev only)."
-          else
-            echo "No keystore secret. Generating a one-off release key (CI)."
-            keytool -genkeypair -v \
-              -keystore signing/kingdom.keystore \
-              -alias kingdom \
-              -keyalg RSA -keysize 2048 -validity 10000 \
-              -storepass kingdom-store -keypass kingdom-key \
-              -dname "CN=Kingdom, OU=VR, O=Kingdom, L=Aetherhold, ST=NA, C=US"
-          fi
+          keytool -genkeypair -keystore signing/kingdom.keystore \
+            -alias kingdom -keyalg RSA -keysize 2048 -validity 10000 \
+            -storepass kingdom-store -keypass kingdom-key \
+            -dname "CN=KingdomVr, OU=Tvman, O=Tvman, L=Aetherhold, ST=NA, C=US"
+          echo "KINGDOM_KEYSTORE=$GITHUB_WORKSPACE/signing/kingdom.keystore" >> "$GITHUB_ENV"
+          echo "KINGDOM_STORE_PASSWORD=kingdom-store" >> "$GITHUB_ENV"
+          echo "KINGDOM_KEY_ALIAS=kingdom" >> "$GITHUB_ENV"
+          echo "KINGDOM_KEY_PASSWORD=kingdom-key" >> "$GITHUB_ENV"
 
-      - name: Make gradlew executable
-        run: chmod +x gradlew || true
-
-      - name: Generate wrapper if missing
+      - name: Install Gradle and build signed release
         run: |
-          if [ ! -f gradlew ]; then
-            gradle wrapper --gradle-version 8.6 || true
-          fi
-          if [ ! -f gradlew ]; then
-            echo "Installing gradle wrapper via gradle image fallback"
-          fi
+          echo "sdk.dir=${ANDROID_HOME}" > local.properties
+          curl -sL https://services.gradle.org/distributions/gradle-8.6-bin.zip -o /tmp/g.zip
+          unzip -q /tmp/g.zip -d /tmp
+          /tmp/gradle-8.6/bin/gradle :app:assembleRelease --no-daemon --stacktrace
 
-      - name: Build signed release APK
-        env:
-          KINGDOM_KEYSTORE: ${{ github.workspace }}/signing/kingdom.keystore
-          KINGDOM_STORE_PASSWORD: ${{ secrets.KINGDOM_STORE_PASSWORD || 'kingdom-store' }}
-          KINGDOM_KEY_ALIAS: ${{ secrets.KINGDOM_KEY_ALIAS || 'kingdom' }}
-          KINGDOM_KEY_PASSWORD: ${{ secrets.KINGDOM_KEY_PASSWORD || 'kingdom-key' }}
-        run: |
-          if [ -x ./gradlew ]; then
-            ./gradlew :app:assembleRelease --no-daemon
-          else
-            echo "gradlew missing — install wrapper"
-            curl -sL https://services.gradle.org/distributions/gradle-8.6-bin.zip -o /tmp/gradle.zip
-            unzip -q /tmp/gradle.zip -d /tmp
-            /tmp/gradle-8.6/bin/gradle wrapper --gradle-version 8.6
-            ./gradlew :app:assembleRelease --no-daemon
-          fi
-
-      - name: Locate APK
-        id: apk
-        run: |
-          APK=$(find app/build/outputs/apk/release -name "*.apk" | head -n 1)
-          echo "path=$APK" >> "$GITHUB_OUTPUT"
-          ls -la app/build/outputs/apk/release || true
-          # verify it is not debug
-          unzip -p "$APK" META-INF/*.RSA >/dev/null 2>&1 || true
-
-      - name: Rename
+      - name: Stage APK
         run: |
           mkdir -p dist
-          cp "${{ steps.apk.outputs.path }}" dist/Kingdom-signed.apk
+          APK=$(find app/build/outputs/apk/release -name "*.apk" | head -n1)
+          test -n "$APK"
+          cp "$APK" dist/KingdomVr-signed.apk
+          ls -la dist
 
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
-          name: Kingdom-signed
-          path: dist/Kingdom-signed.apk
+          name: KingdomVr-signed
+          path: dist/KingdomVr-signed.apk
 
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v2
         with:
           tag_name: v1.0.${{ github.run_number }}
-          name: Kingdom v1.0.${{ github.run_number }}
+          name: Kingdom VR v1.0.${{ github.run_number }}
           body: |
-            Signed release APK for **Kingdom** (not debug).
-            Package: com.kingdom.vr
-            Sideload onto Quest. Story ~1 hour. Freeplay unlocked from title.
-          files: dist/Kingdom-signed.apk
-          generate_release_notes: true
+            Signed release APK (not debug)
+            applicationId: com.Tvman.KingdomVr
+          files: dist/KingdomVr-signed.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
