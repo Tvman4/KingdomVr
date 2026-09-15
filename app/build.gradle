@@ -11,10 +11,10 @@ android {
     }
     signingConfigs {
         release {
-            storeFile file("${System.getenv('KINGDOM_KEYSTORE') ?: rootProject.file('signing/kingdom.keystore')}")
-            storePassword System.getenv('KINGDOM_STORE_PASSWORD') ?: 'kingdom-store'
-            keyAlias System.getenv('KINGDOM_KEY_ALIAS') ?: 'kingdom'
-            keyPassword System.getenv('KINGDOM_KEY_PASSWORD') ?: 'kingdom-key'
+            storeFile file(System.getenv("KINGDOM_KEYSTORE") ?: "${rootDir}/signing/kingdom.keystore")
+            storePassword System.getenv("KINGDOM_STORE_PASSWORD") ?: "kingdom"
+            keyAlias System.getenv("KINGDOM_KEY_ALIAS") ?: "kingdom"
+            keyPassword System.getenv("KINGDOM_KEY_PASSWORD") ?: "kingdom"
         }
     }
     buildTypes {
