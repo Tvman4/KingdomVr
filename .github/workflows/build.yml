@@ -1,6 +1,3 @@
-# Signed RELEASE APK for com.Tvman.KingdomVr → GitHub Releases
-# Keystore is created inside this workflow. Not a debug build.
-# Does NOT use android-actions/setup-android (that action still runs `sdkmanager tools`, which no longer exists).
 name: Build Kingdom VR APK
 
 on:
@@ -14,6 +11,9 @@ permissions:
 env:
   ANDROID_HOME: /usr/local/lib/android/sdk
   ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+  KINGDOM_STORE_PASSWORD: kingdom
+  KINGDOM_KEY_PASSWORD: kingdom
+  KINGDOM_KEY_ALIAS: kingdom
 
 jobs:
   release:
@@ -41,28 +41,29 @@ jobs:
           if [ -z "$SM" ]; then
             echo "sdkmanager not found"; ls -la "$SDK/cmdline-tools" || true; exit 1
           fi
-          echo "Using $SM"
           yes | "$SM" --licenses >/tmp/licenses.log 2>&1 || true
-          tail -5 /tmp/licenses.log || true
           "$SM" "platforms;android-34" "build-tools;34.0.0"
 
-      - name: Create release keystore inside CI
+      - name: Create JKS keystore (same store and key password)
         run: |
           mkdir -p signing
-          keytool -genkeypair -keystore signing/kingdom.keystore \
+          rm -f signing/kingdom.keystore
+          keytool -genkeypair -storetype JKS \
+            -keystore signing/kingdom.keystore \
             -alias kingdom -keyalg RSA -keysize 2048 -validity 10000 \
-            -storepass kingdom-store -keypass kingdom-key \
+            -storepass kingdom -keypass kingdom \
             -dname "CN=KingdomVr, OU=Tvman, O=Tvman, L=Aetherhold, ST=NA, C=US"
           echo "KINGDOM_KEYSTORE=$GITHUB_WORKSPACE/signing/kingdom.keystore" >> "$GITHUB_ENV"
-          echo "KINGDOM_STORE_PASSWORD=kingdom-store" >> "$GITHUB_ENV"
-          echo "KINGDOM_KEY_ALIAS=kingdom" >> "$GITHUB_ENV"
-          echo "KINGDOM_KEY_PASSWORD=kingdom-key" >> "$GITHUB_ENV"
 
-      - name: Install Gradle and build signed release
+      - name: Build signed release
         run: |
           echo "sdk.dir=${ANDROID_HOME}" > local.properties
           curl -sL https://services.gradle.org/distributions/gradle-8.6-bin.zip -o /tmp/g.zip
           unzip -q /tmp/g.zip -d /tmp
+          export KINGDOM_KEYSTORE="$GITHUB_WORKSPACE/signing/kingdom.keystore"
+          export KINGDOM_STORE_PASSWORD=kingdom
+          export KINGDOM_KEY_PASSWORD=kingdom
+          export KINGDOM_KEY_ALIAS=kingdom
           /tmp/gradle-8.6/bin/gradle :app:assembleRelease --no-daemon --stacktrace
 
       - name: Stage APK
